@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "allow": [
+      "Read(**)",
+      "Glob(**)",
+      "Grep(**)",
+      "Edit(**)",
+      "Write(**)",
+      "Bash(python *)",
+      "Bash(pip install -r requirements.txt)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ],
+    "ask": [
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(pip install *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(**/SMTP_PASSWORD*)",
+      "Bash(rm -rf *)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(curl * | sh*)",
+      "Bash(curl * | bash*)",
+      "Bash(wget * | sh*)",
+      "Bash(sudo *)"
+    ]
+  }
+}
