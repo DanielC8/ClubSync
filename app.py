@@ -3,15 +3,19 @@
 import os
 
 from flask import Flask, abort, flash, redirect, render_template, request, send_file, url_for
+from markupsafe import Markup
 
 import seed_data
 from consistency_checker import CSV_PATH, run_checks
 from db_connection import DATA_DIR, get_hq_connection
 from email_script import load_email_config, send_email
-from network_writes import add_leader, add_member
+from network_writes import add_leader, add_member, update_user_flags
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "clubsync-demo")  # only signs flash cookies
+
+# total flags per run, kept in memory to draw the sparkline (cleared on reset)
+RUN_HISTORY = []
 
 
 def ensure_seeded():
@@ -33,18 +37,64 @@ def list_clubs():
         conn.close()
 
 
+def _severity(column):
+    # sanity > mismatch > missing
+    if column == "sanity_check":
+        return "sanity"
+    if "missing" in column or "not_in" in column:
+        return "missing"
+    return "mismatch"
+
+
 def summarise(dataframe):
-    """Just the columns with hits — a clean run has ~60 empty ones the page skips."""
-    hits = [column for column in dataframe.columns if dataframe[column].notna().any()]
+    """Structure the hit columns for the template — a clean run has ~60 empty ones
+    the page skips. Each column carries its severity so cells can be coloured."""
+    hits = [c for c in dataframe.columns if dataframe[c].notna().any()]
+
+    columns = []
+    n_rows = 0
+    flags = 0
+    for c in hits:
+        ids = [str(int(v)) for v in dataframe[c].dropna().tolist()]
+        flags += len(ids)
+        n_rows = max(n_rows, len(ids))
+        columns.append({"header": c, "severity": _severity(c), "ids": ids})
+    for col in columns:
+        col["cells"] = col["ids"] + [""] * (n_rows - len(col["ids"]))
+
     return {
         "total_checks": len(dataframe.columns),
         "found": len(hits),
-        "table": (
-            dataframe[hits].to_html(index=False, na_rep="", border=0, classes="results")
-            if hits
-            else None
-        ),
+        "flags": flags,
+        "columns": columns,
+        "n_rows": n_rows,
     }
+
+
+def sparkline_svg(history, width=240, height=44):
+    """A tiny inline-SVG line of the flag count across this session's runs."""
+    if not history:
+        return ""
+    pad = 6
+    lo, hi = min(history), max(history)
+    span = (hi - lo) or 1
+    step = (width - 2 * pad) / max(len(history) - 1, 1)
+
+    def x(i):
+        return pad + step * i
+
+    def y(v):
+        return height - pad - (height - 2 * pad) * ((v - lo) / span)
+
+    points = " ".join(f"{x(i):.1f},{y(v):.1f}" for i, v in enumerate(history))
+    lx, ly = x(len(history) - 1), y(history[-1])
+    return Markup(
+        f'<svg viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
+        f'class="spark" preserveAspectRatio="none">'
+        f'<polyline points="{points}" fill="none" stroke="currentColor" '
+        f'stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3" fill="currentColor"/></svg>'
+    )
 
 
 def email_preview():
@@ -77,11 +127,15 @@ def index():
 def run():
     dataframe = run_checks()
     dataframe.to_csv(CSV_PATH, index=False)  # write before the preview so it can attach
+    summary = summarise(dataframe)
+    RUN_HISTORY.append(summary["flags"])
     return render_template(
         "index.html",
         clubs=list_clubs(),
-        results=summarise(dataframe),
+        results=summary,
         preview=email_preview(),
+        history=RUN_HISTORY,
+        sparkline=sparkline_svg(RUN_HISTORY),
     )
 
 
@@ -120,9 +174,34 @@ def add():
     return redirect(url_for("index"))
 
 
+@app.route("/flag_user", methods=["POST"])
+def flag_user():
+    try:
+        user_id = int(request.form["user_id"])
+    except (KeyError, ValueError):
+        flash("Enter a numeric user id.", "error")
+        return redirect(url_for("index"))
+
+    action = request.form.get("action", "deactivate")
+    is_active, is_deleted = (0, 1) if action == "delete" else (0, 0)
+    try:
+        update_user_flags(user_id, is_active, is_deleted)
+    except Exception as err:  # show it instead of a 500
+        flash(f"Couldn't update user {user_id}: {err}", "error")
+        return redirect(url_for("index"))
+
+    flash(
+        f"Marked user {user_id} as {action}d in HQ — its region/club copies still "
+        f"disagree, so the next check should flag a mismatch.",
+        "warn",
+    )
+    return redirect(url_for("index"))
+
+
 @app.route("/reset", methods=["POST"])
 def reset():
     seed_data.build_all(reset=True)
+    RUN_HISTORY.clear()
     flash("Demo data reset to the seeded network.", "ok")
     return redirect(url_for("index"))
 

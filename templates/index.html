@@ -126,6 +126,26 @@
     .flash.ok   { background: #eaf6ec; border: 1px solid #b7dfc0; color: #1e4b28; }
     .flash.warn { background: #fff8e6; border: 1px solid #f0d9a0; color: #6b4f13; }
     .flash.error{ background: #fdecec; border: 1px solid #f2b8b5; color: #8a1c13; }
+
+    /* severity colouring: sanity > mismatch > missing */
+    th.sanity   { background: #f6d0cd !important; }
+    th.mismatch { background: #f7dfc0 !important; }
+    th.missing  { background: #f3ecc4 !important; }
+    td.sanity   { background: #fdeceb; }
+    td.mismatch { background: #fdf3e7; }
+    td.missing  { background: #fbf8e8; }
+    td.blank    { background: transparent; }
+
+    .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0 0 .8rem; font-size: .8rem; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: .35rem; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+    .swatch.sanity { background: #f6d0cd; } .swatch.mismatch { background: #f7dfc0; } .swatch.missing { background: #f3ecc4; }
+
+    .trend { display: flex; align-items: center; gap: .9rem; margin: 0 0 1rem; }
+    .trend .spark { color: var(--accent); }
+    .trend .now { font-size: 1.5rem; font-weight: 700; line-height: 1; }
+    .trend .now small { display: block; font-size: .72rem; font-weight: 600; color: var(--muted); }
+    .trend .seq { font-size: .78rem; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -185,6 +205,30 @@
   </div>
 
   <div class="card">
+    <h2>Change a user's status</h2>
+    <form method="post" action="/flag_user">
+      <div class="row">
+        <div>
+          <label for="user_id">User id</label>
+          <input type="text" id="user_id" name="user_id" inputmode="numeric" placeholder="e.g. 5" required>
+        </div>
+        <div>
+          <label for="action">Action</label>
+          <select id="action" name="action">
+            <option value="deactivate">Deactivate</option>
+            <option value="delete">Delete</option>
+          </select>
+        </div>
+      </div>
+      <p class="tally" style="margin:.7rem 0 .9rem;">
+        Changes the user's flags in HQ only, so its region/club copies disagree and
+        the next check flags a mismatch.
+      </p>
+      <button type="submit" class="primary">Update status</button>
+    </form>
+  </div>
+
+  <div class="card">
     <h2>Run the checks</h2>
     <div class="actions">
       <form method="post" action="/run">
@@ -200,14 +244,48 @@
   {% if results %}
   <div class="card">
     <h2>Findings</h2>
+
+    {% if history and history|length %}
+    <div class="trend">
+      {{ sparkline }}
+      <div class="now">{{ results.flags }}<small>flags this run</small></div>
+      <div class="seq">across {{ history|length }} run{{ '' if history|length == 1 else 's' }}: {{ history|join(' → ') }}</div>
+    </div>
+    {% endif %}
+
     <p class="tally">
       Ran {{ results.total_checks }} checks across the network &mdash;
       <b>{{ results.found }}</b> came back with something.
       Each column is one check; the numbers under it are the flagged user ids.
     </p>
 
-    {% if results.table %}
-      <div class="scroll">{{ results.table|safe }}</div>
+    {% if results.columns %}
+      <div class="legend">
+        <span><i class="swatch sanity"></i> sanity (impossible state)</span>
+        <span><i class="swatch mismatch"></i> flag mismatch vs HQ</span>
+        <span><i class="swatch missing"></i> missing / cross-tier gap</span>
+      </div>
+      <div class="scroll">
+        <table class="results">
+          <thead>
+            <tr>
+              {% for col in results.columns %}
+                <th class="{{ col.severity }}">{{ col.header }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for i in range(results.n_rows) %}
+            <tr>
+              {% for col in results.columns %}
+                {% set value = col.cells[i] %}
+                <td class="{{ col.severity if value else 'blank' }}">{{ value }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
       <p style="margin:.9rem 0 0;">
         <a class="dl" href="/flagged_ids.csv">Download flagged_ids.csv</a>
         <span class="pill">all {{ results.total_checks }} columns, including the empty ones</span>

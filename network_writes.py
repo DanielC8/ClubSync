@@ -108,3 +108,19 @@ def add_member(name, club_id, propagate_to_club=True):
 
 def add_leader(name, club_id, propagate_to_club=True):
     return _add_person(name, club_id, propagate_to_club, as_leader=True)
+
+
+def update_user_flags(user_id, is_active, is_deleted):
+    """Set a user's flags in HQ only. The region/club copies keep their old flags,
+    so they now disagree with HQ and the next run catches the mismatch."""
+    hq_conn = get_hq_connection()
+    try:
+        if hq_conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone() is None:
+            raise ValueError(f"user {user_id} isn't in HQ")
+        hq_conn.execute(
+            "UPDATE users SET is_active = ?, is_deleted = ? WHERE id = ?",
+            (is_active, is_deleted, user_id),
+        )
+        hq_conn.commit()
+    finally:
+        hq_conn.close()

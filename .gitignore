@@ -7,3 +7,6 @@ __pycache__/
 
 # planning/spec docs — not part of the shipped app
 *.md
+
+# macOS
+.DS_Store
