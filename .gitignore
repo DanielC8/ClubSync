@@ -3,6 +3,7 @@ flagged_ids.csv
 __pycache__/
 *.pyc
 .env
+.venv/
 
 # planning/spec docs — not part of the shipped app
 *.md

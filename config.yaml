@@ -1,0 +1,27 @@
+email:
+  enabled: true
+  dry_run: true            # keep this on for the demo — preview only, nothing goes out
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_username: "no-reply@clubsync.dev"
+  use_tls: true
+  sender_email: "no-reply@clubsync.dev"
+  recipient_email: "reports@clubsync.dev"
+  cc:
+    - "leads@clubsync.dev"
+  subject: "Club Network Data Consistency Report"
+  # the actual SMTP password is never in here — it's read from $SMTP_PASSWORD at send time
+  content: |
+    Hello,
+
+    Attached is the latest data consistency report for the ClubSync network.
+
+    This report flags discrepancies across the HQ, region, and club databases:
+      - Members marked as both active and deleted (sanity check)
+      - Mismatched is_active / is_deleted flags vs. the HQ users table
+      - User IDs missing from the HQ users table
+      - Users not present in members or leaders
+      - Missing IDs across region and club databases
+
+    Best,
+    ClubSync Automated Reporting
